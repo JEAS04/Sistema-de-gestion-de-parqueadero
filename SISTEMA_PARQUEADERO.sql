@@ -4,7 +4,7 @@ USE SIS_PARQUEADERO
 CREATE TABLE CELDA (
 id_celda INT PRIMARY KEY IDENTITY(1,1),
 id_sede INT NOT NULL,
-id_tipo_celda INT NOT NULL,
+id_tipo_celda INT  CHECK (ESTADO_CELDA  IN ('Ocupada', 'Libre')) NOT NULL ,
 ESTADO_CELDA VARCHAR(50)
 );
 
@@ -123,7 +123,7 @@ precio DECIMAL(10,2)
 
 CREATE TABLE celda_lavado (
 id_celda_lavado INT PRIMARY KEY IDENTITY(1,1),
-estado_celda VARCHAR(20),
+estado_celda VARCHAR(20) (ESTADO_CELDA  IN ('Ocupada', 'Libre')) NOT NULL,
 tamaño VARCHAR(50),
 );
 
