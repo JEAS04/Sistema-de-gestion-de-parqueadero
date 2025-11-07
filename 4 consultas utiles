@@ -1,0 +1,65 @@
+/*Hacer 4 consultas útiles para el usuario, que implementen los 4 tipos de Joins que hay.
+Cada consulta debe ir con su respectivo enunciado, y debe generar algún resultado.*/
+/* 1 creacion de consulta con inner join 
+autor David 
+enunciado : Mostrar los parqueos realizados, junto con la información del vehículo y la sede donde se estacionó.
+El objetivo es que el usuario pueda ver los movimientos de parqueo con su contexto completo.*/
+SELECT 
+    p.id_parqueo,
+    p.fecha_hora_ingreso,
+    p.fecha_hora_salida,
+    v.placa,
+    v.marca,
+    v.modelo,
+    s.nombre_sede,
+    p.estado_parqueo
+FROM parqueo AS p
+INNER JOIN vehiculo AS v ON p.placa_vehiculo = v.placa
+INNER JOIN sede AS s ON p.id_sede = s.id_sede;
+/* 2  creacion de consulta con left   join 
+autor David 
+enunciado : Mostrar todos los clientes registrados, junto con los vehículos que tienen.  */
+SELECT 
+    c.documento,
+    c.nombre AS nombre_cliente,
+    c.telefono,
+    v.placa,
+    v.marca,
+    v.modelo,
+    v.color
+FROM cliente AS c
+LEFT JOIN vehiculo AS v
+    ON c.documento = v.documento_cliente;
+    /* 3   creacion de consulta con rigth    join 
+autor David 
+enunciado : Mostrar todos los lavados realizados, junto con su factura asociada (si existe).
+Si hay algún lavado que todavía no ha sido facturado, debe aparecer igualmente. */
+SELECT 
+    f.id_factura,
+    f.fecha_emision,
+    f.total_pagar,
+    l.id_lavado,
+    l.placa,
+    l.precio_lavado,
+    l.estado_lavado
+FROM factura AS f
+RIGHT JOIN lavado AS l
+    ON f.id_liquidacion_lavado = l.id_lavado;
+      /* 4   creacion de consulta con FULL OUTER JOIN
+autor David 
+enunciado : Listar todos los convenios y todos los clientes, para ver:
+
+clientes sin convenio,
+
+convenios sin clientes,
+
+y los que sí están asociados. */
+SELECT
+    c.documento       AS documento_cliente,
+    c.nombre          AS nombre_cliente,
+    con.id_convenio,
+    con.nombre_convenio
+FROM cliente AS c
+FULL OUTER JOIN convenio AS con
+    ON c.id_convenio = con.id_convenio
+ORDER BY con.id_convenio, c.documento;
