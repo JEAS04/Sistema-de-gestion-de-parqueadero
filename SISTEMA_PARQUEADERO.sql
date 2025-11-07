@@ -1,11 +1,13 @@
-CREATE DATABASE SIS_PARQUEADERO
+ CREATE DATABASE SIS_PARQUEADERO
+   GO
 USE SIS_PARQUEADERO
+   GO 
 
 CREATE TABLE CELDA (
 id_celda INT PRIMARY KEY IDENTITY(1,1),
 id_sede INT NOT NULL,
-id_tipo_celda INT  CHECK (ESTADO_CELDA  IN ('Ocupada', 'Libre')) NOT NULL ,
-ESTADO_CELDA VARCHAR(50)
+id_tipo_celda INT   ,
+ESTADO_CELDA VARCHAR(50) CHECK (ESTADO_CELDA  IN ('Ocupada', 'Libre')) NOT NULL
 );
 
 CREATE TABLE sede (
@@ -69,18 +71,18 @@ id_sede INT
 );
 
 CREATE TABLE TIPO_VEHICULO (
-placa_vehiculo VARCHAR(20) PRIMARY KEY,
-nombre_tipo VARCHAR(50),
-cilindraje VARCHAR(20)
+    id_tipo_vehiculo INT PRIMARY KEY IDENTITY(1,1),
+    nombre_tipo VARCHAR(50) NOT NULL,
+    cilindraje VARCHAR(20)
 );
 
 CREATE TABLE vehiculo (
-placa VARCHAR(20) PRIMARY KEY,
-marca VARCHAR(50),
-modelo VARCHAR(50),
-color VARCHAR(30),
-id_tipo_vehiculo VARCHAR(20) NOT NULL,
-documento_cliente VARCHAR(50) NOT NULL
+    placa VARCHAR(20) PRIMARY KEY,
+    marca VARCHAR(50),
+    modelo VARCHAR(50),
+    color VARCHAR(30),
+    id_tipo_vehiculo INT NOT NULL,
+    documento_cliente VARCHAR(50) NOT NULL
 );
 
 CREATE TABLE parqueo (
@@ -123,7 +125,7 @@ precio DECIMAL(10,2)
 
 CREATE TABLE celda_lavado (
 id_celda_lavado INT PRIMARY KEY IDENTITY(1,1),
-estado_celda VARCHAR(20) (ESTADO_CELDA  IN ('Ocupada', 'Libre')) NOT NULL,
+estado_celda VARCHAR(20) CHECK (ESTADO_CELDA  IN ('Ocupada', 'Libre')) NOT NULL,
 tamaño VARCHAR(50),
 );
 
@@ -193,10 +195,8 @@ REFERENCES sede(id_sede);
 ALTER TABLE vehiculo
 ADD CONSTRAINT FK_vehiculo_tipo
 FOREIGN KEY (id_tipo_vehiculo)
-REFERENCES TIPO_VEHICULO(placa_vehiculo);
-
-ALTER TABLE vehiculo
-ADD CONSTRAINT FK_vehiculo_cliente
+REFERENCES TIPO_VEHICULO(id_tipo_vehiculo),
+CONSTRAINT FK_vehiculo_cliente
 FOREIGN KEY (documento_cliente)
 REFERENCES cliente(documento);
 
