@@ -1,0 +1,39 @@
+/*Hacer 4 consultas que utilice teoría de conjuntos. Deben ir con su enunciado y producir algún resultado.*/
+
+/* 1  creacion de consulta con UNION (teoría de conjuntos)
+autor David
+enunciado : Listar todas las placas que han tenido actividad en el sistema (ya sea parqueo o lavado), sin duplicados. */
+SELECT p.placa_vehiculo AS placa
+FROM parqueo AS p
+UNION
+SELECT l.placa
+FROM lavado AS l;
+
+/* 2  creacion de consulta con UNION ALL (teoría de conjuntos)
+autor David
+enunciado : Contar el total de actividades por placa sumando parqueos y lavados (conservando duplicados para sumar frecuencia). */
+SELECT placa, COUNT(*) AS total_actividades
+FROM (
+    SELECT p.placa_vehiculo AS placa FROM parqueo AS p
+    UNION ALL
+    SELECT l.placa          AS placa FROM lavado  AS l
+) AS x
+GROUP BY placa
+ORDER BY total_actividades DESC, placa;
+
+/* 3  creacion de consulta con INTERSECT (teoría de conjuntos)
+autor David
+enunciado : Obtener las placas que aparecen tanto en parqueos como en lavados (intersección). */
+SELECT p.placa_vehiculo
+FROM parqueo AS p
+INTERSECT
+SELECT l.placa
+FROM lavado AS l;
+/* 4  creacion de consulta con EXCEPT (teoría de conjuntos)
+autor David
+enunciado : Listar los vehículos registrados que nunca se han parqueado (diferencia de conjuntos). */
+SELECT v.placa
+FROM vehiculo AS v
+EXCEPT
+SELECT p.placa_vehiculo
+FROM parqueo AS p;
