@@ -125,7 +125,7 @@ precio DECIMAL(10,2)
 
 CREATE TABLE celda_lavado (
 id_celda_lavado INT PRIMARY KEY IDENTITY(1,1),
-estado_celda VARCHAR(20) CHECK (estado_celda  IN ('Ocupada', 'Libre')) NOT NULL,
+estado_celda VARCHAR(20) CHECK (estado_celda  IN ('Ocupada', 'Libre')) NOT NULL
 tamaño VARCHAR(50),
 );
 
