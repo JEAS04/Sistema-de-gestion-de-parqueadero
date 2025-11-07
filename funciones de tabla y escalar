@@ -1,0 +1,164 @@
+/*Desarrollar 3 funciones de tablas y 3 funciones escalares dentro de las necesidades del proyecto a desarrollar.
+Estos procedimientos deben estar debidamente documentados.*/
+
+/*  1 creacion de funcion de tabla : dbo.tvf_DisponibilidadCeldas 
+autor: David Martinez Giraldo 
+fecha : 7/11/2025 
+
+*/
+CREATE OR ALTER FUNCTION dbo.tvf_DisponibilidadCeldas
+(
+    @id_sede INT,              --- variables 
+    @id_tipo_celda INT = NULL
+)
+RETURNS TABLE
+AS
+RETURN
+(
+    SELECT  c.id_celda,
+            s.nombre_sede,
+            tc.nombre_tipo AS tipo_celda,
+            c.estado_celda
+    FROM CELDA c
+    INNER JOIN sede s       ON s.id_sede = c.id_sede
+    INNER JOIN TIPO_CELDA tc ON tc.id_tipo_celda = c.id_tipo_celda
+    WHERE c.id_sede = @id_sede --- las celdas pertenecientes a la sede 
+      AND c.estado_celda = 'Libre' --- que la celda este libre 
+      AND (@id_tipo_celda IS NULL OR c.id_tipo_celda = @id_tipo_celda) ---  comprobamos si es null el tipo de celda  o si  hay una en especifico 
+);
+GO
+
+-- Ejemplo:
+ --SELECT * FROM dbo.tvf_DisponibilidadCeldas(2, NULL);
+
+  /*2 creacion de funcion de tabla: dbo.tvf_ParqueosAbiertosPorSede
+ autor: David Martinez Giraldo 
+fecha : 7/11/2025 
+descripcion :Devuelve los parqueos abiertos (sin cierre ) de una sede específica, mostrando placa, hora de ingreso y el tiempo transcurrido en horas hasta ahora
+ (o hasta la hora de salida si ya está registrada).*/
+
+ CREATE OR ALTER FUNCTION dbo.tvf_ParqueosAbiertosPorSede
+(
+    @id_sede INT
+)
+RETURNS TABLE
+AS
+RETURN
+(
+    SELECT  p.id_parqueo,
+            p.placa_vehiculo,
+            p.fecha_hora_ingreso,
+            DATEDIFF(MINUTE, p.fecha_hora_ingreso, ISNULL(p.fecha_hora_salida, GETDATE()))/60.0 AS horas_transcurridas -- DATEDIFF(MINUTE, inicio, fin) calcula minutos entre ingreso y salida.
+            -- iSNULL(p.fecha_hora_salida, GETDATE()) usa la salida si existe; si es NULL (parqueo aún abierto), toma la hora actual del servidor.
+    FROM parqueo p
+    WHERE p.id_sede = @id_sede
+      AND (p.estado_parqueo = 'Abierto' OR p.fecha_hora_salida IS NULL)
+);
+GO
+-- -- Ejemplo:
+ SELECT * FROM dbo.tvf_ParqueosAbiertosPorSede(1);
+  /*3 creacion de funcion de tabla: dbo.tvf_HistorialLavadosPorVehiculo
+ autor: David Martinez Giraldo 
+fecha : 7/11/2025 
+descripcion :Mostrar el historial de lavados realizados a un vehículo específico, con las fechas, estado y precio.
+Ideal para consultas rápidas del cliente o para generar reportes de uso del servicio.*/
+CREATE OR ALTER FUNCTION dbo.tvf_HistorialLavadosPorVehiculo
+(
+    @placa VARCHAR(20)
+)
+RETURNS TABLE
+AS
+RETURN
+(
+    SELECT 
+        l.id_lavado,
+        s.nombre_sede,
+        l.fecha_inicio,
+        l.fecha_fin,
+        l.estado_lavado,
+        tl.descripcion AS tipo_lavado,
+        tl.precio AS precio_base,
+        l.precio_lavado
+    FROM lavado l
+    INNER JOIN sede s ON s.id_sede = l.id_sede
+    LEFT JOIN tipo_lavado tl ON tl.id_tipo_lavado = l.id_tipo_lavado
+    WHERE l.placa = @placa
+    
+);
+GO
+-- ejemplo 
+--INSERT INTO lavado (id_sede, precio_lavado, placa, fecha_inicio, fecha_fin, estado_lavado, id_celda_lavado, id_tipo_lavado) VALUES (1, 9020.00, 'ABC001', '2025-02-02 08:00:00', '2025-02-02 09:00:00', 'finalizado ', 1, 1);
+--SELECT * FROM dbo.tvf_HistorialLavadosPorVehiculo('ABC001');
+--select * from lavado
+
+--- funciones escalares 
+
+/*  1 creacion de funcion escalar: dbo.ufn_TotalLavadosVehiculo 
+autor David Martinez Giraldo 
+descripcion funcion que devuelve las veces en que se ha lavado un vehiculo 
+*/
+
+CREATE OR ALTER FUNCTION dbo.ufn_TotalLavadosVehiculo
+(
+    @placa VARCHAR(20)
+)
+RETURNS INT
+AS
+BEGIN
+    DECLARE @total INT;
+
+    SELECT @total = COUNT(*)
+    FROM lavado
+    WHERE placa = @placa;
+
+    RETURN ISNULL(@total, 0);
+END;
+GO
+-- ejemplo :
+ --SELECT dbo.ufn_TotalLavadosVehiculo('ABC001') AS TotalLavados;
+ /*  2  creacion de funcion escalar: dbo.ufn_CeldasDisponiblesEnSede 
+autor David Martinez Giraldo 
+descripcion:  funcion que devuelve cuantas celdas estan libres en una cede 
+*/
+CREATE OR ALTER FUNCTION dbo.ufn_CeldasDisponiblesEnSede
+(
+    @id_sede INT
+)
+RETURNS INT
+AS
+BEGIN
+    DECLARE @disponibles INT;
+
+    SELECT @disponibles = COUNT(*)
+    FROM CELDA
+    WHERE id_sede = @id_sede
+      AND estado_celda = 'Libre';
+
+    RETURN ISNULL(@disponibles, 0);
+END
+GO
+-- ejemplo 
+ --SELECT dbo.ufn_CeldasDisponiblesEnSede(2) AS CeldasLibres;
+  /*  3  creacion de funcion escalar:  dbo.ufn_CeldasOcupadasEnSede 
+autor David Martinez Giraldo 
+descripcion:  funcion que devuelve cuantas celdas estan ocupado  en una cede 
+*/
+CREATE OR ALTER FUNCTION dbo.ufn_CeldasOcupadasEnSede
+(
+    @id_sede INT
+)
+RETURNS INT
+AS
+BEGIN
+    DECLARE @ocupadas INT;
+
+    SELECT @ocupadas = COUNT(*)
+    FROM CELDA
+    WHERE id_sede = @id_sede
+      AND estado_celda = 'Ocupada';
+
+    RETURN ISNULL(@ocupadas, 0);
+END;
+GO
+-- ejemplo 
+--- SELECT dbo.ufn_CeldasOcupadasEnSede(1) AS CeldasOcupadas;
