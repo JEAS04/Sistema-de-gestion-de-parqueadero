@@ -1,14 +1,15 @@
 -- ============================================================================
 -- PROCEDIMIENTOS ALMACENADOS CRUD
--- Sistema de Gestión de Parqueadero
+-- Autor: Julian Alvarez
+-- Sistema de GestiÃ³n de Parqueadero
 -- ============================================================================
--- Descripción: Procedimientos para realizar operaciones CRUD (Crear, Leer,
+-- DescripciÃ³n: Procedimientos para realizar operaciones CRUD (Crear, Leer,
 --              Actualizar, Eliminar) sobre las tablas principales del sistema
 -- ============================================================================
 -- TABLA 1: CLIENTE
 -- ============================================================================
 -- PROCEDIMIENTO: P_CREAR_CLIENTE
--- Descripción: Inserta un nuevo cliente en el sistema
+-- DescripciÃ³n: Inserta un nuevo cliente en el sistema
 -- ============================================================================
 GO
 CREATE PROCEDURE P_CREAR_CLIENTE
@@ -69,7 +70,7 @@ EXEC P_CREAR_CLIENTE
 
 -- ====================================================================
 -- PROCEDIMIENTO: P_CONSULTA_CLIENTE
--- Descripción: Consulta la información de uno o todos los clientes
+-- DescripciÃ³n: Consulta la informaciÃ³n de uno o todos los clientes
 -- ====================================================================
 GO
 CREATE PROCEDURE P_CONSULTA_CLIENTE
@@ -81,7 +82,7 @@ BEGIN
     BEGIN TRY
         IF @documento IS NULL
         BEGIN
-            -- Listar todos los clientes con información del convenio
+            -- Listar todos los clientes con informaciÃ³n del convenio
             SELECT 
                 c.documento,
                 c.nombre,
@@ -96,10 +97,10 @@ BEGIN
         END
         ELSE
         BEGIN
-            -- Buscar cliente específico
+            -- Buscar cliente especÃ­fico
             IF NOT EXISTS (SELECT 1 FROM cliente WHERE documento = @documento)
             BEGIN
-                PRINT 'No se encontró el cliente con documento: ' + @documento;
+                PRINT 'No se encontrÃ³ el cliente con documento: ' + @documento;
                 RETURN;
             END
             
@@ -132,7 +133,7 @@ EXEC P_CONSULTA_CLIENTE @documento = 'C001';
 
 -- =======================================================================
 -- PROCEDIMIENTO: P_ACTUALIZAR_CLIENTE
--- Descripción: Actualiza la información de un cliente existente
+-- DescripciÃ³n: Actualiza la informaciÃ³n de un cliente existente
 -- =======================================================================
 GO
 CREATE PROCEDURE P_ACTUALIZAR_CLIENTE
@@ -186,7 +187,7 @@ EXEC P_ACTUALIZAR_CLIENTE
 
 EXEC P_ACTUALIZAR_CLIENTE 
     @documento = '1234567890', 
-    @nombre = 'Juanito Pérez', 
+    @nombre = 'Juanito PÃ©rez', 
     @telefono = '912345678', 
     @correo = 'juanito.perez@ejemplo.com', 
     @direccion = 'Calle Nueva 456, Ciudad Y', 
@@ -197,7 +198,7 @@ EXEC P_ACTUALIZAR_CLIENTE
 
 -- =======================================================================
 -- PROCEDIMIENTO: P_ELIMINAR_CLIENTE
--- Descripción: Elimina un cliente del sistema (solo si no tiene vehículos)
+-- DescripciÃ³n: Elimina un cliente del sistema (solo si no tiene vehÃ­culos)
 -- =======================================================================
 GO
 CREATE PROCEDURE P_ELIMINAR_CLIENTE
@@ -222,7 +223,7 @@ BEGIN
 
         SELECT @nombre = nombre FROM cliente WHERE documento = @documento;
 
-			-- Validar que no tenga vehículos asociados
+			-- Validar que no tenga vehÃ­culos asociados
 
         IF EXISTS (SELECT 1 FROM vehiculo WHERE documento_cliente = @documento)
         BEGIN
@@ -261,7 +262,7 @@ EXEC P_ELIMINAR_CLIENTE @documento = '1234567890';
 -- TABLA 2: VEHICULO
 -- ============================================================================
 -- PROCEDIMIENTO: P_CREAR_VEHICULO
--- Descripción: Registra un nuevo vehículo en el sistema
+-- DescripciÃ³n: Registra un nuevo vehÃ­culo en el sistema
 -- ============================================================================
 GO
 CREATE PROCEDURE P_CREAR_VEHICULO
@@ -296,7 +297,7 @@ BEGIN
             RETURN;
         END
         
-			-- Validar que el tipo de vehículo existe en la base de datos
+			-- Validar que el tipo de vehÃ­culo existe en la base de datos
 
         IF NOT EXISTS (SELECT 1 FROM TIPO_VEHICULO WHERE id_tipo_vehiculo = @id_tipo_vehiculo)
         BEGIN
@@ -305,7 +306,7 @@ BEGIN
             RETURN;
         END
         
-			-- Insertar vehículo en la base de datos
+			-- Insertar vehÃ­culo en la base de datos
         INSERT INTO vehiculo (placa, marca, modelo, color, id_tipo_vehiculo, documento_cliente)
         VALUES (@placa, @marca, @modelo, @color, @id_tipo_vehiculo, @documento_cliente);
         
@@ -328,13 +329,13 @@ EXEC P_CREAR_VEHICULO
     @marca = 'Toyota',
     @modelo = 'Corolla',
     @color = 'Rojo',
-    @id_tipo_vehiculo = 1,  -- Suponiendo que 1 es el id de un tipo de vehículo válido
+    @id_tipo_vehiculo = 1,  -- Suponiendo que 1 es el id de un tipo de vehÃ­culo vÃ¡lido
     @documento_cliente = '1234567890';  -- Documento del cliente
 */
 
 -- ============================================================================
 -- PROCEDIMIENTO: P_CONSULTA_VEHICULO
--- Descripción: Consulta información de uno o todos los vehículos
+-- DescripciÃ³n: Consulta informaciÃ³n de uno o todos los vehÃ­culos
 -- ============================================================================
 GO
 CREATE PROCEDURE P_CONSULTA_VEHICULO
@@ -346,7 +347,7 @@ BEGIN
     BEGIN TRY
         IF @placa IS NULL
         BEGIN
-            -- Listar todos los vehículos
+            -- Listar todos los vehÃ­culos
             SELECT 
                 v.placa,
                 v.marca,
@@ -362,7 +363,7 @@ BEGIN
         END
         ELSE
         BEGIN
-            -- Buscar vehículo específico
+            -- Buscar vehÃ­culo especÃ­fico
             IF NOT EXISTS (SELECT 1 FROM vehiculo WHERE placa = @placa)
             BEGIN
                 PRINT 'No se encontro el vehiculo con placa: ' + @placa;
@@ -399,7 +400,7 @@ EXEC P_CONSULTA_VEHICULO @placa = 'ABC001';
 
 -- ============================================================================
 -- PROCEDIMIENTO: P_ACTUALIZAR_VEHICULO
--- Descripción: Actualiza información de un vehículo
+-- DescripciÃ³n: Actualiza informaciÃ³n de un vehÃ­culo
 -- ============================================================================
 GO
 CREATE PROCEDURE P_ACTUALIZAR_VEHICULO
@@ -415,7 +416,7 @@ BEGIN
     DECLARE @error_msg NVARCHAR(4000);
     
     BEGIN TRY
-        -- Validar que el vehículo existe en la base de datos
+        -- Validar que el vehÃ­culo existe en la base de datos
         IF NOT EXISTS (SELECT 1 FROM vehiculo WHERE placa = @placa)
         BEGIN
             SET @error_msg = 'El vehiculo con placa ' + @placa + ' no existe.';
@@ -454,13 +455,13 @@ EXEC P_ACTUALIZAR_VEHICULO
     @marca = 'Toyota',  -- Nueva marca
     @modelo = 'Camry',  -- Nuevo modelo
     @color = 'Negro',   -- Nuevo color
-    @id_tipo_vehiculo = 2;  -- Nuevo tipo de vehículo
+    @id_tipo_vehiculo = 2;  -- Nuevo tipo de vehÃ­culo
 
 */
 
 -- ============================================================================
 -- PROCEDIMIENTO: P_ELIMINAR_VEHICULO
--- Descripción: Elimina un vehículo del sistema (solo si no tiene historial)
+-- DescripciÃ³n: Elimina un vehÃ­culo del sistema (solo si no tiene historial)
 -- ============================================================================
 GO
 CREATE PROCEDURE P_ELIMINAR_VEHICULO
@@ -474,7 +475,7 @@ BEGIN
     BEGIN TRY
         BEGIN TRANSACTION;
         
-        -- Validar que el vehículo existe en la base de datos
+        -- Validar que el vehÃ­culo existe en la base de datos
         IF NOT EXISTS (SELECT 1 FROM vehiculo WHERE placa = @placa)
         BEGIN
             SET @error_msg = 'El vehiculo con placa ' + @placa + ' no existe.';
@@ -498,7 +499,7 @@ BEGIN
             RETURN;
         END
         
-        -- Eliminar vehículo
+        -- Eliminar vehÃ­culo
         DELETE FROM vehiculo WHERE placa = @placa;
         
         COMMIT TRANSACTION;
@@ -526,7 +527,7 @@ EXEC P_ELIMINAR_VEHICULO
 -- TABLA 3: CONVENIO
 -- ============================================================================
 -- PROCEDIMIENTO: P_CREAR_CONVENIO
--- Descripción: Crea un nuevo convenio/plan de parqueadero
+-- DescripciÃ³n: Crea un nuevo convenio/plan de parqueadero
 -- ============================================================================
 GO
 CREATE PROCEDURE P_CREAR_CONVENIO
@@ -609,7 +610,7 @@ SELECT @id_convenio_nuevo AS 'Nuevo ID Convenio';
 
 -- ============================================================================
 -- PROCEDIMIENTO: P_CONSULTAR_CONVENIO
--- Descripción: Consulta convenios activos o específicos
+-- DescripciÃ³n: Consulta convenios activos o especÃ­ficos
 -- ============================================================================
 GO
 CREATE PROCEDURE P_CONSULTAR_CONVENIO
@@ -624,7 +625,7 @@ BEGIN
     BEGIN TRY
         IF @id_convenio IS NULL
         BEGIN
-            -- Listar convenios según filtro
+            -- Listar convenios segÃºn filtro
             SELECT 
                 c.id_convenio,
                 c.nombre_convenio,
@@ -648,7 +649,7 @@ BEGIN
         END
         ELSE
         BEGIN
-            -- Buscar convenio específico
+            -- Buscar convenio especÃ­fico
             IF NOT EXISTS (SELECT 1 FROM convenio WHERE id_convenio = @id_convenio)
             BEGIN
                 PRINT 'No se encontro el convenio con ID: ' + CAST(@id_convenio AS VARCHAR(10));
@@ -689,7 +690,7 @@ EXEC P_CONSULTAR_CONVENIO @id_convenio = 5; -- POR ID:
 */
 -- ============================================================================
 -- PROCEDIMIENTO: P_ACTUALIZAR_CONVENIO
--- Descripción: Actualiza información de un convenio existente
+-- DescripciÃ³n: Actualiza informaciÃ³n de un convenio existente
 -- ============================================================================
 GO
 CREATE PROCEDURE  P_ACTUALIZAR_CONVENIO
@@ -743,7 +744,7 @@ EXEC P_ACTUALIZAR_CONVENIO
 
 -- ============================================================================
 -- PROCEDIMIENTO: P_ELIMINAR_CONVENIO
--- Descripción: Elimina un convenio (solo si no tiene clientes asociados)
+-- DescripciÃ³n: Elimina un convenio (solo si no tiene clientes asociados)
 -- ============================================================================
 GO
 CREATE PROCEDURE P_ELIMINAR_CONVENIO
@@ -799,4 +800,5 @@ GO
 /*
 EJEMPLO DE USO:
 EXEC P_ELIMINAR_CONVENIO @id_convenio = 7;
+
 */
