@@ -259,3 +259,11 @@ ALTER TABLE liquidacion_lavado
 ADD CONSTRAINT FK_liquidacion_lavado
 FOREIGN KEY (id_lavado)
 REFERENCES lavado(id_lavado);
+
+ALTER TABLE parqueo
+ADD id_celda INT NULL;
+
+ALTER TABLE parqueo
+ADD CONSTRAINT FK_parqueo_celda
+FOREIGN KEY (id_celda)
+REFERENCES CELDA(id_celda);
