@@ -1,0 +1,389 @@
+/* =========================================================
+   BASE DE DATOS
+   ========================================================= */
+IF DB_ID('SIS_PARQUEADERO') IS NULL
+BEGIN
+  CREATE DATABASE SIS_PARQUEADERO;
+END
+GO
+USE SIS_PARQUEADERO;
+GO
+
+/* =========================================================
+   TABLAS ORIGINALES (SIN CAMBIOS)
+   ========================================================= */
+CREATE TABLE CELDA (
+  id_celda INT PRIMARY KEY IDENTITY(1,1),
+  id_sede INT NOT NULL,
+  id_tipo_celda INT,
+  estado_celda VARCHAR(50) CHECK (estado_celda IN ('Ocupada', 'Libre')) NOT NULL
+);
+
+CREATE TABLE sede (
+  id_sede INT PRIMARY KEY IDENTITY(1,1),
+  nombre_sede VARCHAR(100) NOT NULL,
+  direccion VARCHAR(200)
+);
+
+CREATE TABLE TIPO_CELDA (
+  id_tipo_celda INT PRIMARY KEY IDENTITY(1,1),
+  nombre_tipo VARCHAR(50),
+  tamaño_referencial VARCHAR(50)
+);
+
+CREATE TABLE rol (
+  id_rol INT PRIMARY KEY IDENTITY(1,1),
+  nombre_rol VARCHAR(50) NOT NULL,
+  descripcion VARCHAR(200)
+);
+
+CREATE TABLE usuario (
+  id_usuario INT PRIMARY KEY IDENTITY(1,1),
+  nombre_usuario VARCHAR(100) NOT NULL,
+  contraseña VARCHAR(255) NOT NULL,
+  nombre_completo VARCHAR(150),
+  correo VARCHAR(100),
+  id_rol INT NOT NULL,
+  estado_parqueo BIT,
+  id_sede INT
+);
+
+CREATE TABLE personal (
+  id_personal INT PRIMARY KEY IDENTITY(1,1),
+  documento VARCHAR(50) NOT NULL,
+  nombre VARCHAR(100) NOT NULL,
+  apellido VARCHAR(100) NOT NULL,
+  telefono VARCHAR(20),
+  correo VARCHAR(100),
+  id_rol INT NOT NULL,
+  id_sede INT
+);
+
+CREATE TABLE cliente (
+  documento VARCHAR(50) PRIMARY KEY,
+  nombre VARCHAR(100) NOT NULL,
+  telefono VARCHAR(20),
+  correo VARCHAR(100),
+  direccion VARCHAR(200),
+  id_convenio INT
+);
+
+CREATE TABLE convenio (
+  id_convenio INT PRIMARY KEY IDENTITY(1,1),
+  nombre_convenio VARCHAR(100) NOT NULL,
+  descripcion VARCHAR(200),
+  precio_base DECIMAL(10,2),
+  unidad_tarifaria VARCHAR(50),
+  vigencia_inicio DATE,
+  vigencia_fin DATE,
+  id_sede INT
+);
+
+CREATE TABLE TIPO_VEHICULO (
+  id_tipo_vehiculo INT PRIMARY KEY IDENTITY(1,1),
+  nombre_tipo VARCHAR(50) NOT NULL,
+  cilindraje VARCHAR(20)
+);
+
+CREATE TABLE vehiculo (
+  placa VARCHAR(20) PRIMARY KEY,
+  marca VARCHAR(50),
+  modelo VARCHAR(50),
+  color VARCHAR(30),
+  id_tipo_vehiculo INT NOT NULL,
+  documento_cliente VARCHAR(50) NOT NULL
+);
+
+CREATE TABLE parqueo (
+  id_parqueo INT PRIMARY KEY IDENTITY(1,1),
+  id_tarjeta INT NOT NULL,
+  fecha_hora_ingreso DATETIME NOT NULL,
+  fecha_hora_salida DATETIME,
+  id_sede INT NOT NULL,
+  placa_vehiculo VARCHAR(20) NOT NULL,
+  estado_parqueo VARCHAR(20)
+);
+
+CREATE TABLE Tarjeta (
+  id_tarjeta INT PRIMARY KEY IDENTITY(1,1),
+  estado_tarjeta VARCHAR(20),
+  fecha_hora_emision DATETIME,
+  id_personal INT NOT NULL
+);
+
+CREATE TABLE lavado(
+  id_lavado INT PRIMARY KEY IDENTITY(1,1),
+  id_sede INT NOT NULL,
+  precio_lavado DECIMAL(10,2),
+  placa VARCHAR(20),
+  fecha_inicio DATETIME,
+  fecha_fin DATETIME,
+  estado_lavado VARCHAR(20)
+);
+ALTER TABLE lavado ADD id_celda_lavado INT;
+ALTER TABLE lavado ADD id_tipo_lavado INT;
+
+CREATE TABLE tipo_lavado (
+  id_tipo_lavado INT PRIMARY KEY IDENTITY(1,1),
+  descripcion VARCHAR(100),
+  precio DECIMAL(10,2)
+);
+
+CREATE TABLE celda_lavado (
+  id_celda_lavado INT PRIMARY KEY IDENTITY(1,1),
+  estado_celda VARCHAR(20) CHECK (estado_celda IN ('Ocupada', 'Libre')) NOT NULL,
+  tamaño VARCHAR(50)
+);
+
+CREATE TABLE factura (
+  id_factura INT PRIMARY KEY IDENTITY(1,1),
+  fecha_emision DATE NOT NULL,
+  documento_cliente VARCHAR(50) NOT NULL,
+  id_sede INT,
+  total_pagar DECIMAL(10,2),
+  id_liquidacion_lavado INT
+);
+
+CREATE TABLE detalle_factura (
+  id_detalle_factura INT PRIMARY KEY IDENTITY(1,1),
+  id_factura INT NOT NULL,
+  id_referencia_servicio INT,
+  sub_total DECIMAL(10,2)
+);
+
+CREATE TABLE liquidacion_lavado (
+  id_liquidacion_lavado INT PRIMARY KEY IDENTITY(1,1),
+  id_lavado INT NOT NULL,
+  monto_calculado DECIMAL(10,2),
+  fecha_liquidacion DATE
+);
+
+/* FKs ORIGINALES */
+ALTER TABLE CELDA
+ADD CONSTRAINT FK_CELDA_sede
+FOREIGN KEY (id_sede) REFERENCES sede(id_sede);
+
+ALTER TABLE CELDA
+ADD CONSTRAINT FK_CELDA_TIPO_CELDA
+FOREIGN KEY (id_tipo_celda) REFERENCES TIPO_CELDA(id_tipo_celda);
+
+ALTER TABLE usuario
+ADD CONSTRAINT FK_usuario_rol
+FOREIGN KEY (id_rol) REFERENCES rol(id_rol);
+
+ALTER TABLE usuario
+ADD CONSTRAINT FK_usuario_sede
+FOREIGN KEY (id_sede) REFERENCES sede(id_sede);
+
+ALTER TABLE personal
+ADD CONSTRAINT FK_personal_rol
+FOREIGN KEY (id_rol) REFERENCES rol(id_rol);
+
+ALTER TABLE personal
+ADD CONSTRAINT FK_personal_sede
+FOREIGN KEY (id_sede) REFERENCES sede(id_sede);
+
+ALTER TABLE cliente
+ADD CONSTRAINT FK_cliente_convenio
+FOREIGN KEY (id_convenio) REFERENCES convenio(id_convenio);
+
+ALTER TABLE convenio
+ADD CONSTRAINT FK_convenio_sede
+FOREIGN KEY (id_sede) REFERENCES sede(id_sede);
+
+ALTER TABLE vehiculo
+ADD CONSTRAINT FK_vehiculo_tipo
+FOREIGN KEY (id_tipo_vehiculo) REFERENCES TIPO_VEHICULO(id_tipo_vehiculo),
+CONSTRAINT FK_vehiculo_cliente
+FOREIGN KEY (documento_cliente) REFERENCES cliente(documento);
+
+ALTER TABLE parqueo
+ADD CONSTRAINT FK_parqueo_tarjeta
+FOREIGN KEY (id_tarjeta) REFERENCES Tarjeta(id_tarjeta);
+
+ALTER TABLE parqueo
+ADD CONSTRAINT FK_parqueo_sede
+FOREIGN KEY (id_sede) REFERENCES sede(id_sede);
+
+ALTER TABLE parqueo
+ADD CONSTRAINT FK_parqueo_vehiculo
+FOREIGN KEY (placa_vehiculo) REFERENCES vehiculo(placa);
+
+ALTER TABLE Tarjeta
+ADD CONSTRAINT FK_tarjeta_personal
+FOREIGN KEY (id_personal) REFERENCES personal(id_personal);
+
+ALTER TABLE lavado
+ADD CONSTRAINT FK_lavado_sede
+FOREIGN KEY (id_sede) REFERENCES sede(id_sede);
+
+ALTER TABLE lavado
+ADD CONSTRAINT FK_lavado_celda_lavado
+FOREIGN KEY (id_celda_lavado) REFERENCES celda_lavado(id_celda_lavado);
+
+ALTER TABLE lavado
+ADD CONSTRAINT FK_lavado_tipo_lavado
+FOREIGN KEY (id_tipo_lavado) REFERENCES tipo_lavado(id_tipo_lavado);
+
+ALTER TABLE factura
+ADD CONSTRAINT FK_factura_cliente
+FOREIGN KEY (documento_cliente) REFERENCES cliente(documento);
+
+ALTER TABLE factura
+ADD CONSTRAINT FK_factura_sede
+FOREIGN KEY (id_sede) REFERENCES sede(id_sede);
+
+ALTER TABLE factura
+ADD CONSTRAINT FK_factura_liquidacion
+FOREIGN KEY (id_liquidacion_lavado) REFERENCES liquidacion_lavado(id_liquidacion_lavado);
+
+ALTER TABLE detalle_factura
+ADD CONSTRAINT FK_detalle_factura
+FOREIGN KEY (id_factura) REFERENCES factura(id_factura);
+
+ALTER TABLE liquidacion_lavado
+ADD CONSTRAINT FK_liquidacion_lavado
+FOREIGN KEY (id_lavado) REFERENCES lavado(id_lavado);
+
+ALTER TABLE parqueo
+ADD id_celda INT NULL;
+
+ALTER TABLE parqueo
+ADD CONSTRAINT FK_parqueo_celda
+FOREIGN KEY (id_celda) REFERENCES CELDA(id_celda);
+
+GO
+
+/* =========================================================
+   TABLAS NUEVAS (ADITIVAS) + RELACIONES (SIN ÍNDICES)
+   ========================================================= */
+
+-- 1) Tipos de convenio
+CREATE TABLE convenio_tipo (
+  id_convenio_tipo INT IDENTITY(1,1) PRIMARY KEY,
+  nombre VARCHAR(50) NOT NULL UNIQUE  -- 'Ingreso irrestricto','Arriendo celda','Dias fijos','Horas fijas','Por placa'
+);
+
+-- 2) Reglas de convenio
+CREATE TABLE convenio_regla (
+  id_convenio_regla INT IDENTITY(1,1) PRIMARY KEY,
+  id_convenio INT NOT NULL,
+  id_convenio_tipo INT NOT NULL,
+  cupos INT NULL,                     -- ingreso irrestricto
+  id_celda INT NULL,                  -- arriendo de celda fija
+  dias_semana VARCHAR(20) NULL,       -- '1,2,3' (1=lun ... 7=dom)
+  horas_inicio TIME NULL,             -- horas fijas
+  horas_fin TIME NULL,
+  placa_especifica VARCHAR(20) NULL,  -- por placa específica
+  fecha_inicio DATE NULL,
+  fecha_fin DATE NULL,
+  CONSTRAINT FK_convenio_regla_convenio
+    FOREIGN KEY (id_convenio) REFERENCES convenio(id_convenio),
+  CONSTRAINT FK_convenio_regla_tipo
+    FOREIGN KEY (id_convenio_tipo) REFERENCES convenio_tipo(id_convenio_tipo),
+  CONSTRAINT FK_convenio_regla_celda
+    FOREIGN KEY (id_celda) REFERENCES CELDA(id_celda)
+);
+
+-- 3) Asociación convenio ↔ vehículo
+CREATE TABLE convenio_vehiculo (
+  id_convenio_vehiculo INT PRIMARY KEY IDENTITY(1,1),
+  id_convenio INT NOT NULL,
+  placa VARCHAR(20) NOT NULL,
+  vigente_desde DATE NULL,
+  vigente_hasta DATE NULL,
+  CONSTRAINT FK_convenio_vehiculo_convenio
+    FOREIGN KEY (id_convenio) REFERENCES convenio(id_convenio),
+  CONSTRAINT FK_convenio_vehiculo_vehiculo
+    FOREIGN KEY (placa) REFERENCES vehiculo(placa)
+);
+
+-- 4) Tarifas por sede y condiciones
+CREATE TABLE tarifa (
+  id_tarifa INT PRIMARY KEY IDENTITY(1,1),
+  id_sede INT NOT NULL,
+  id_tipo_vehiculo INT NULL,
+  id_tipo_celda INT NULL,
+  id_tipo_lavado INT NULL,
+  unidad VARCHAR(20) NOT NULL,        -- 'hora','fraccion','evento'
+  fraccion_minutos INT NULL,
+  precio DECIMAL(10,2) NOT NULL,
+  vigente_desde DATE NOT NULL,
+  vigente_hasta DATE NULL,
+  CONSTRAINT FK_tarifa_sede
+    FOREIGN KEY (id_sede) REFERENCES sede(id_sede),
+  CONSTRAINT FK_tarifa_tipo_vehiculo
+    FOREIGN KEY (id_tipo_vehiculo) REFERENCES TIPO_VEHICULO(id_tipo_vehiculo),
+  CONSTRAINT FK_tarifa_tipo_celda
+    FOREIGN KEY (id_tipo_celda) REFERENCES TIPO_CELDA(id_tipo_celda),
+  CONSTRAINT FK_tarifa_tipo_lavado
+    FOREIGN KEY (id_tipo_lavado) REFERENCES tipo_lavado(id_tipo_lavado),
+  CONSTRAINT CK_tarifa_unidad
+    CHECK (unidad IN ('hora','fraccion','evento'))
+);
+
+-- 5) Tipificación del detalle de factura
+CREATE TABLE detalle_factura_tipo (
+  id_detalle_factura INT PRIMARY KEY,     -- mismo id que detalle_factura
+  tipo_servicio VARCHAR(20) NOT NULL,     -- 'PARQUEO'|'LAVADO'|'CONVENIO'
+  id_servicio INT NULL,                   -- id_parqueo / id_lavado / id_convenio
+  CONSTRAINT FK_dft_detalle
+    FOREIGN KEY (id_detalle_factura) REFERENCES detalle_factura(id_detalle_factura),
+  CONSTRAINT CK_dft_tipo
+    CHECK (tipo_servicio IN ('PARQUEO','LAVADO','CONVENIO'))
+);
+
+-- 6) Turnos y marcación de personal
+CREATE TABLE turno_definicion (
+  id_turno INT PRIMARY KEY IDENTITY(1,1),
+  id_sede INT NOT NULL,
+  nombre VARCHAR(100) NOT NULL,     -- 'Mañana','Tarde'
+  hora_inicio TIME NOT NULL,
+  hora_fin TIME NOT NULL,
+  CONSTRAINT FK_turno_def_sede
+    FOREIGN KEY (id_sede) REFERENCES sede(id_sede)
+);
+
+CREATE TABLE turno_asignacion (
+  id_turno_asignacion INT PRIMARY KEY IDENTITY(1,1),
+  id_turno INT NOT NULL,
+  id_personal INT NOT NULL,
+  fecha DATE NOT NULL,
+  estado VARCHAR(20) NULL,          -- 'Programado','Cumplido','Inasistencia'
+  CONSTRAINT FK_turno_asignacion_turno
+    FOREIGN KEY (id_turno) REFERENCES turno_definicion(id_turno),
+  CONSTRAINT FK_turno_asignacion_personal
+    FOREIGN KEY (id_personal) REFERENCES personal(id_personal)
+);
+
+CREATE TABLE marcacion_personal (
+  id_marcacion INT PRIMARY KEY IDENTITY(1,1),
+  id_personal INT NOT NULL,
+  fecha_hora DATETIME NOT NULL,
+  tipo VARCHAR(10) NOT NULL,        -- 'Entrada' | 'Salida'
+  id_sede INT NULL,
+  CONSTRAINT FK_marcacion_personal
+    FOREIGN KEY (id_personal) REFERENCES personal(id_personal),
+  CONSTRAINT FK_marcacion_sede
+    FOREIGN KEY (id_sede) REFERENCES sede(id_sede),
+  CONSTRAINT CK_marcacion_tipo
+    CHECK (tipo IN ('Entrada','Salida'))
+);
+
+-- 7) Bitácora de eventos de tarjeta (auditoría)
+CREATE TABLE tarjeta_evento (
+  id_tarjeta_evento INT PRIMARY KEY IDENTITY(1,1),
+  id_tarjeta INT NOT NULL,
+  fecha_hora DATETIME NOT NULL,
+  evento VARCHAR(20) NOT NULL,      -- 'Emision','Ingreso','Pago','Salida','Bloqueo','Desbloqueo'
+  id_sede INT NULL,
+  observacion VARCHAR(200) NULL,
+  CONSTRAINT FK_tarjeta_evento_tarjeta
+    FOREIGN KEY (id_tarjeta) REFERENCES Tarjeta(id_tarjeta),
+  CONSTRAINT FK_tarjeta_evento_sede
+    FOREIGN KEY (id_sede) REFERENCES sede(id_sede),
+  CONSTRAINT CK_tarjeta_evento_tipo
+    CHECK (evento IN ('Emision','Ingreso','Pago','Salida','Bloqueo','Desbloqueo'))
+);
+
+GO
