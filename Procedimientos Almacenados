@@ -1,0 +1,711 @@
+-- ============================================================================
+-- NECESIDAD 1: GESTIÓN AUTOMÁTICA DE FACTURACIÓN Y LIQUIDACIÓN DE SERVICIOS
+-- Autor: Julian Alvarez
+-- ============================================================================
+-- Descripción: Al finalizar un servicio (parqueo o lavado), el sistema debe
+-- calcular automáticamente los montos, generar la factura y actualizar
+-- inventarios de celdas, manteniendo la integridad de todas las transacciones.
+-- ============================================================================
+
+-- FUNCIÓN 1.1: Calcular tarifa de parqueo según tiempo y convenio
+GO
+CREATE OR ALTER FUNCTION dbo.fn_CalcularTarifaParqueo(
+    @fecha_ingreso DATETIME,
+    @fecha_salida DATETIME,
+    @id_convenio INT,
+    @id_tipo_vehiculo INT
+)
+RETURNS DECIMAL(10,2)
+AS
+BEGIN
+    DECLARE @monto DECIMAL(10,2) = 0;
+    DECLARE @minutos INT;
+    DECLARE @horas DECIMAL(10,2);
+    DECLARE @precio_base DECIMAL(10,2);
+    DECLARE @plazo INT;
+    
+    -- Calcular tiempo transcurrido
+    SET @minutos = DATEDIFF(MINUTE, @fecha_ingreso, @fecha_salida);
+	SET @horas = @minutos / 60.0;
+    
+    -- Si tiene convenio, obtener precio del convenio
+    IF @id_convenio IS NOT NULL
+    BEGIN
+        SELECT @precio_base = precio_base, @plazo = plazo
+        FROM CONVENIO
+        WHERE id_convenio = @id_convenio
+              AND GETDATE() BETWEEN vigencia_inicio AND vigencia_fin;
+        
+        IF @precio_base IS NOT NULL
+        BEGIN
+            -- Aplicar precio según plazo (días)
+            IF @plazo >= 30
+                SET @monto = @precio_base; -- Tarifa mensual fija
+            ELSE IF @plazo >= 7
+                SET @monto = @precio_base * (@horas / 24.0); -- Por día
+			ELSE
+				SET @monto = @precio_base * @horas; -- Por hora
+        END
+    END
+    ELSE
+    BEGIN
+        -- Tarifas ocasionales según tipo de vehículo
+        IF @id_tipo_vehiculo = 1 -- Pequeño
+			SET @monto = 2000 * @horas;
+		ELSE IF @id_tipo_vehiculo = 2 -- Mediano
+			SET @monto = 3000 * @horas;
+		ELSE IF @id_tipo_vehiculo = 3 -- Grande/SUV
+			SET @monto = 5000 * @horas;
+		ELSE IF @id_tipo_vehiculo = 4 -- Compacto
+			SET @monto = 1500 * @horas;
+		ELSE
+			SET @monto = 2500 * @horas;
+    END
+    
+    -- Mínimo 1 hora
+    IF @monto < 2000
+        SET @monto = 2000;
+    
+    RETURN @monto;
+END
+GO
+
+-- FUNCIÓN 1.2: Validar disponibilidad de celda por sede
+GO
+CREATE OR ALTER FUNCTION dbo.fn_ValidarDisponibilidadCelda(
+    @id_sede INT
+)
+RETURNS INT
+AS
+BEGIN
+    DECLARE @celda_disponible INT = NULL;
+    
+    SELECT TOP 1 @celda_disponible = id_celda
+    FROM CELDA
+    WHERE id_sede = @id_sede
+          AND estado = 'disponible'
+    ORDER BY id_celda;
+    
+    RETURN @celda_disponible;
+END
+GO
+
+-- TRIGGER 1.1: Actualizar estado de celda al registrar parqueo
+GO
+CREATE OR ALTER TRIGGER trg_ParqueoIngreso
+ON PARQUEO
+AFTER INSERT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    DECLARE @error_msg NVARCHAR(4000);
+    
+    BEGIN TRY
+        -- Actualizar celda a ocupada
+        UPDATE CELDA
+        SET estado = 'ocupada'
+        FROM CELDA c
+        INNER JOIN inserted i ON c.id_celda = i.id_celda
+        WHERE i.id_celda IS NOT NULL;
+        
+        -- Actualizar estado de tarjeta
+        UPDATE TARJETA
+        SET estado_tarjeta = 'Activa'
+        FROM TARJETA t
+        INNER JOIN inserted i ON t.id_tarjeta = i.id_tarjeta;
+        
+    END TRY
+    BEGIN CATCH
+        SET @error_msg = ERROR_MESSAGE();
+        RAISERROR(@error_msg, 16, 1);
+        ROLLBACK TRANSACTION;
+    END CATCH
+END
+GO
+
+-- TRIGGER 1.2: Liberar celda y calcular valor al registrar salida
+GO
+CREATE OR ALTER TRIGGER trg_ParqueoSalida
+ON PARQUEO
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    DECLARE @error_msg NVARCHAR(4000);
+    
+    BEGIN TRY
+        -- Solo procesar cuando se registra fecha de salida
+        IF UPDATE(fecha_hora_salida)
+        BEGIN
+            DECLARE @id_parqueo INT, @id_celda INT, @id_tarjeta INT;
+            DECLARE @id_vehiculo INT, @id_cliente INT;
+            DECLARE @fecha_ingreso DATETIME, @fecha_salida DATETIME;
+            DECLARE @id_convenio INT, @id_tipo_vehiculo INT;
+            DECLARE @monto DECIMAL(10,2);
+            
+            -- Cursor para procesar cada salida
+            DECLARE cur_salidas CURSOR FOR
+            SELECT i.id_parqueo, i.id_celda, i.id_tarjeta,
+                   i.fecha_hora_ingreso, i.fecha_hora_salida
+            FROM inserted i
+            INNER JOIN deleted d ON i.id_parqueo = d.id_parqueo
+            WHERE i.fecha_hora_salida IS NOT NULL 
+                  AND d.fecha_hora_salida IS NULL;
+            
+            OPEN cur_salidas;
+            FETCH NEXT FROM cur_salidas INTO @id_parqueo, @id_celda, @id_tarjeta,
+                @fecha_ingreso, @fecha_salida;
+            
+            WHILE @@FETCH_STATUS = 0
+            BEGIN
+                -- Obtener vehículo y cliente desde ASIGNACION_CONVENIO
+                SELECT TOP 1 @id_vehiculo = ac.id_vehiculo,
+                       @id_convenio = ac.id_convenio
+                FROM ASIGNACION_CONVENIO ac
+                WHERE ac.id_tarjeta = @id_tarjeta
+                      AND ac.estado = 'Activo';
+                
+                IF @id_vehiculo IS NOT NULL
+                BEGIN
+                    -- Obtener cliente y tipo de vehículo
+                    SELECT @id_cliente = v.id_cliente
+                    FROM VEHICULO v
+                    WHERE v.id_vehiculo = @id_vehiculo;
+                    
+                    -- Obtener tipo de vehículo desde la relación M:N
+                    SELECT TOP 1 @id_tipo_vehiculo = vt.id_tipo_vehiculo
+                    FROM Vehiculo_TipoVehiculo vt
+                    WHERE vt.id_vehiculo = @id_vehiculo;
+                END
+                
+                -- Calcular monto usando la función
+                SET @monto = dbo.fn_CalcularTarifaParqueo(
+                    @fecha_ingreso, @fecha_salida, @id_convenio, @id_tipo_vehiculo
+                );
+                
+                -- Actualizar valor cobrado en el parqueo
+                UPDATE PARQUEO
+                SET valor_cobrado = @monto,
+                    estado_parqueo = 'finalizado'
+                WHERE id_parqueo = @id_parqueo;
+                
+                -- Liberar celda
+                IF @id_celda IS NOT NULL
+                BEGIN
+                    UPDATE CELDA
+                    SET estado = 'disponible'
+                    WHERE id_celda = @id_celda;
+                END
+                
+                -- Actualizar estado de tarjeta
+                UPDATE TARJETA
+                SET estado_tarjeta = 'Inactiva'
+                WHERE id_tarjeta = @id_tarjeta;
+                
+                FETCH NEXT FROM cur_salidas INTO @id_parqueo, @id_celda, @id_tarjeta,
+                    @fecha_ingreso, @fecha_salida;
+            END
+            
+            CLOSE cur_salidas;
+            DEALLOCATE cur_salidas;
+        END
+    END TRY
+    BEGIN CATCH
+        SET @error_msg = ERROR_MESSAGE();
+        
+        IF CURSOR_STATUS('local', 'cur_salidas') >= 0
+        BEGIN
+            CLOSE cur_salidas;
+            DEALLOCATE cur_salidas;
+        END
+        
+        RAISERROR(@error_msg, 16, 1);
+        ROLLBACK TRANSACTION;
+    END CATCH
+END
+GO
+-- =======================================================================================================================
+-- PROCEDIMIENTO 1: Procesar salida de vehículo y generar factura completa
+-- =======================================================================================================================
+
+GO
+CREATE OR ALTER PROCEDURE sp_ProcesarSalidaVehiculo
+    @id_parqueo INT,
+    @id_usuario INT,
+    @metodo_pago NVARCHAR(50) = 'Efectivo',
+    @id_factura INT OUTPUT,
+    @total_factura DECIMAL(10,2) OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    DECLARE @error_message NVARCHAR(4000);
+    DECLARE @id_vehiculo INT, @id_cliente INT, @id_tarjeta INT;
+    DECLARE @fecha_ingreso DATETIME, @fecha_salida DATETIME;
+    DECLARE @id_convenio INT, @id_tipo_vehiculo INT, @id_sede INT;
+    DECLARE @monto_parqueo DECIMAL(10,2);
+    DECLARE @id_servicio_lavado INT, @monto_lavado DECIMAL(10,2);
+    DECLARE @numero_factura NVARCHAR(50);
+    DECLARE @total_bruto DECIMAL(10,2), @total_neto DECIMAL(10,2);
+    
+    BEGIN TRY
+        BEGIN TRANSACTION;
+        
+        -- Validar que el parqueo existe y no tiene salida registrada
+        IF NOT EXISTS (SELECT 1 FROM PARQUEO 
+                      WHERE id_parqueo = @id_parqueo 
+                      AND fecha_hora_salida IS NULL)
+        BEGIN
+            SET @error_message = 'El parqueo no existe o ya tiene salida registrada.';
+            RAISERROR(@error_message, 16, 1);
+        END
+        
+        -- Obtener datos del parqueo
+        SELECT @fecha_ingreso = p.fecha_hora_ingreso,
+               @id_tarjeta = p.id_tarjeta,
+               @id_sede = c.id_sede
+        FROM PARQUEO p
+        INNER JOIN CELDA c ON c.id_celda = p.id_celda
+        WHERE p.id_parqueo = @id_parqueo;
+        
+        -- Registrar fecha de salida (esto activará el trigger)
+        SET @fecha_salida = GETDATE();
+        UPDATE PARQUEO
+        SET fecha_hora_salida = @fecha_salida
+        WHERE id_parqueo = @id_parqueo;
+        
+        -- Obtener el valor calculado por el trigger
+        SELECT @monto_parqueo = valor_cobrado
+        FROM PARQUEO
+        WHERE id_parqueo = @id_parqueo;
+        
+        -- Obtener vehículo y cliente
+        SELECT TOP 1 @id_vehiculo = ac.id_vehiculo,
+               @id_convenio = ac.id_convenio
+        FROM ASIGNACION_CONVENIO ac
+        WHERE ac.id_tarjeta = @id_tarjeta
+              AND ac.estado = 'Activo';
+        
+        IF @id_vehiculo IS NOT NULL
+        BEGIN
+            SELECT @id_cliente = id_cliente
+            FROM VEHICULO
+            WHERE id_vehiculo = @id_vehiculo;
+        END
+        
+        IF @id_cliente IS NULL
+        BEGIN
+            SET @error_message = 'No se encontró el cliente asociado al vehículo.';
+            RAISERROR(@error_message, 16, 1);
+        END
+        
+        -- Verificar si hay servicios de lavado completados sin facturar
+        SELECT TOP 1 @id_servicio_lavado = id_servicio_lavado,
+               @monto_lavado = valor
+        FROM SERVICIO_LAVADO
+        WHERE id_vehiculo = @id_vehiculo
+              AND estado = 'completado'
+              AND id_factura IS NULL
+        ORDER BY fecha_hora_fin DESC;
+        
+        -- Calcular totales
+        SET @total_bruto = @monto_parqueo + ISNULL(@monto_lavado, 0);
+        SET @total_neto = @total_bruto;
+        
+        -- Generar número de factura único
+        SET @numero_factura = 'FAC-' + FORMAT(GETDATE(), 'yyyyMMdd') + '-' + 
+                             RIGHT('0000' + CAST(@id_parqueo AS VARCHAR), 4);
+        
+        -- Crear factura
+        INSERT INTO FACTURA (total_bruto, numero_factura, metodo_pago, total_neto, 
+                           fecha_hora_emision, id_usuario, id_parqueo, id_cliente)
+        VALUES (@total_bruto, @numero_factura, @metodo_pago, @total_neto,
+               GETDATE(), @id_usuario, @id_parqueo, @id_cliente);
+        
+        SET @id_factura = SCOPE_IDENTITY();
+        
+        -- Crear detalle de factura para parqueo
+        INSERT INTO DETALLE_FACTURA (id_factura, id_detalle_factura, cantidad, 
+                                    precio_unitario, servicio_pagado, descripcion, id_parqueo)
+        VALUES (@id_factura, 1, 1, @monto_parqueo, 'Parqueo', 
+               'Servicio de parqueadero', @id_parqueo);
+        
+        -- Crear detalle de factura para lavado si existe
+        IF @id_servicio_lavado IS NOT NULL
+        BEGIN
+            -- Actualizar servicio de lavado con la factura
+            UPDATE SERVICIO_LAVADO
+            SET id_factura = @id_factura
+            WHERE id_servicio_lavado = @id_servicio_lavado;
+            
+            INSERT INTO DETALLE_FACTURA (id_factura, id_detalle_factura, cantidad,
+                                        precio_unitario, servicio_pagado, descripcion)
+            VALUES (@id_factura, 2, 1, @monto_lavado, 'Lavado',
+                   'Servicio de lavado de vehículo');
+        END
+        
+        -- Crear registro de pago
+        INSERT INTO PAGO (metodo_pago, monto_pago, fecha_hora_pago, 
+                         referencia_transaccion, id_factura, id_cliente)
+        VALUES (@metodo_pago, @total_neto, GETDATE(),
+               'PAG-' + @numero_factura, @id_factura, @id_cliente);
+        
+        SET @total_factura = @total_neto;
+        
+        COMMIT TRANSACTION;
+        
+        -- Mensaje de éxito
+        PRINT 'Salida procesada exitosamente. Factura #' + @numero_factura;
+        PRINT 'Total a pagar: $' + CAST(@total_factura AS VARCHAR(20));
+        
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0
+            ROLLBACK TRANSACTION;
+            
+        SET @error_message = ERROR_MESSAGE();
+        PRINT 'ERROR: ' + @error_message;
+        RAISERROR(@error_message, 16, 1);
+    END CATCH
+END
+GO
+
+-- ============================================================================
+-- NECESIDAD 2: GESTIÓN AUTOMÁTICA DE RESERVAS Y CONTROL DE OCUPACIÓN
+-- Autor: Julian Alvarez
+-- ============================================================================
+-- Descripción: Administrar automáticamente las reservas de celdas según
+-- convenios, validar disponibilidad, controlar tiempos de gracia y liberar
+-- celdas no utilizadas, manteniendo estadísticas actualizadas.
+-- ============================================================================
+
+-- Tabla auxiliar
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'estadistica_ocupacion')
+BEGIN
+    CREATE TABLE estadistica_ocupacion (
+        id_estadistica INT PRIMARY KEY IDENTITY(1,1),
+        id_sede INT NOT NULL,
+        fecha DATE NOT NULL,
+        total_celdas INT,
+        celdas_ocupadas INT,
+        celdas_disponibles INT,
+        celdas_mantenimiento INT,
+        porcentaje_ocupacion DECIMAL(5,2),
+        ingresos_dia DECIMAL(10,2),
+        CONSTRAINT FK_estadistica_sede FOREIGN KEY (id_sede) REFERENCES SEDE(id_sede),
+        CONSTRAINT UQ_estadistica_sede_fecha UNIQUE (id_sede, fecha)
+    );
+END
+GO
+
+-- FUNCIÓN 2.1: Calcular porcentaje de ocupación por sede
+GO
+CREATE OR ALTER FUNCTION dbo.fn_CalcularOcupacionSede(
+    @id_sede INT
+)
+RETURNS DECIMAL(5,2)
+AS
+BEGIN
+    DECLARE @total INT, @ocupadas INT, @porcentaje DECIMAL(5,2);
+    
+    -- Calcular para todas las celdas de la sede
+    SELECT @total = COUNT(*),
+           @ocupadas = SUM(CASE WHEN estado = 'ocupada' THEN 1 ELSE 0 END)
+    FROM CELDA
+    WHERE id_sede = @id_sede;
+    
+    IF @total > 0
+        SET @porcentaje = (@ocupadas * 100.0) / @total;
+    ELSE
+        SET @porcentaje = 0;
+    
+    RETURN @porcentaje;
+END
+GO
+
+-- FUNCIÓN 2.2: Obtener tiempo promedio de permanencia
+GO
+CREATE OR ALTER FUNCTION dbo.fn_TiempoPromedioParqueo(
+    @id_sede INT,
+    @fecha_inicio DATE,
+    @fecha_fin DATE
+)
+RETURNS DECIMAL(10,2)
+AS
+BEGIN
+    DECLARE @promedio_horas DECIMAL(10,2);
+    
+    SELECT @promedio_horas = AVG(DATEDIFF(MINUTE, p.fecha_hora_ingreso, p.fecha_hora_salida) / 60.0)
+    FROM PARQUEO p
+    INNER JOIN CELDA c ON c.id_celda = p.id_celda
+    WHERE c.id_sede = @id_sede
+          AND p.fecha_hora_salida IS NOT NULL
+          AND CAST(p.fecha_hora_ingreso AS DATE) BETWEEN @fecha_inicio AND @fecha_fin;
+    
+    RETURN ISNULL(@promedio_horas, 0);
+END
+GO
+
+-- TRIGGER 2.1: Actualizar estadísticas al cambiar ocupación
+GO
+CREATE OR ALTER TRIGGER trg_ActualizarEstadisticas
+ON CELDA
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    DECLARE @error_msg NVARCHAR(4000);
+    
+    BEGIN TRY
+        IF UPDATE(estado)
+        BEGIN
+            DECLARE @id_sede INT, @fecha DATE;
+            DECLARE @total_celdas INT, @celdas_ocupadas INT;
+            DECLARE @celdas_disponibles INT, @celdas_mantenimiento INT;
+            DECLARE @porcentaje DECIMAL(5,2), @ingresos DECIMAL(10,2);
+            
+            SET @fecha = CAST(GETDATE() AS DATE);
+            
+            -- Cursor para procesar cada sede afectada
+            DECLARE cur_sedes CURSOR FOR
+            SELECT DISTINCT id_sede
+            FROM inserted;
+            
+            OPEN cur_sedes;
+            FETCH NEXT FROM cur_sedes INTO @id_sede;
+            
+            WHILE @@FETCH_STATUS = 0
+            BEGIN
+                -- Calcular ocupación
+                SELECT @total_celdas = COUNT(*),
+                       @celdas_ocupadas = SUM(CASE WHEN estado = 'ocupada' THEN 1 ELSE 0 END),
+                       @celdas_disponibles = SUM(CASE WHEN estado = 'disponible' THEN 1 ELSE 0 END),
+                       @celdas_mantenimiento = SUM(CASE WHEN estado = 'mantenimiento' THEN 1 ELSE 0 END)
+                FROM CELDA
+                WHERE id_sede = @id_sede;
+                
+                SET @porcentaje = dbo.fn_CalcularOcupacionSede(@id_sede);
+                
+                -- Calcular ingresos del día
+                SELECT @ingresos = ISNULL(SUM(f.total_neto), 0)
+                FROM FACTURA f
+                INNER JOIN PARQUEO p ON p.id_parqueo = f.id_parqueo
+                INNER JOIN CELDA c ON c.id_celda = p.id_celda
+                WHERE c.id_sede = @id_sede 
+                      AND CAST(f.fecha_hora_emision AS DATE) = @fecha;
+                
+                -- Actualizar o insertar estadísticas
+                IF EXISTS (SELECT 1 FROM estadistica_ocupacion 
+                          WHERE id_sede = @id_sede AND fecha = @fecha)
+                BEGIN
+                    UPDATE estadistica_ocupacion
+                    SET total_celdas = @total_celdas,
+                        celdas_ocupadas = @celdas_ocupadas,
+                        celdas_disponibles = @celdas_disponibles,
+                        celdas_mantenimiento = @celdas_mantenimiento,
+                        porcentaje_ocupacion = @porcentaje,
+                        ingresos_dia = @ingresos
+                    WHERE id_sede = @id_sede AND fecha = @fecha;
+                END
+                ELSE
+                BEGIN
+                    INSERT INTO estadistica_ocupacion 
+                        (id_sede, fecha, total_celdas, celdas_ocupadas, celdas_disponibles,
+                         celdas_mantenimiento, porcentaje_ocupacion, ingresos_dia)
+                    VALUES (@id_sede, @fecha, @total_celdas, @celdas_ocupadas, @celdas_disponibles,
+                           @celdas_mantenimiento, @porcentaje, @ingresos);
+                END
+                
+                FETCH NEXT FROM cur_sedes INTO @id_sede;
+            END
+            
+            CLOSE cur_sedes;
+            DEALLOCATE cur_sedes;
+        END
+    END TRY
+    BEGIN CATCH
+        SET @error_msg = ERROR_MESSAGE();
+        
+        IF CURSOR_STATUS('local', 'cur_sedes') >= 0
+        BEGIN
+            CLOSE cur_sedes;
+            DEALLOCATE cur_sedes;
+        END
+        -- No lanzar error para no bloquear la operación principal
+        PRINT 'Error al actualizar estadísticas: ';
+        PRINT @error_msg;
+    END CATCH
+END
+GO
+-- =======================================================================================================================
+-- PROCEDIMIENTO 2: Asignar celda automáticamente según disponibilidad y convenio
+-- =======================================================================================================================
+GO
+CREATE OR ALTER PROCEDURE sp_AsignarCeldaAutomatica
+    @id_vehiculo INT,
+    @id_sede INT,
+    @id_usuario INT,
+    @modo_ingreso NVARCHAR(20) = 'Ocasional',
+    @id_parqueo INT OUTPUT,
+    @id_celda_asignada INT OUTPUT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    DECLARE @error_message NVARCHAR(4000);
+    DECLARE @id_tipo_vehiculo INT;
+    DECLARE @id_cliente INT, @id_convenio INT;
+    DECLARE @id_tarjeta INT;
+    DECLARE @ocupacion DECIMAL(5,2);
+    DECLARE @codigo_tarjeta NVARCHAR(50);
+    
+    BEGIN TRY
+        BEGIN TRANSACTION;
+        
+        -- Validar que el vehículo existe
+        IF NOT EXISTS (SELECT 1 FROM VEHICULO WHERE id_vehiculo = @id_vehiculo)
+        BEGIN
+            SET @error_message = 'El vehículo especificado no está registrado.';
+            RAISERROR(@error_message, 16, 1);
+        END
+        
+        -- Obtener tipo de vehículo y cliente
+        SELECT @id_cliente = v.id_cliente
+        FROM VEHICULO v
+        WHERE v.id_vehiculo = @id_vehiculo;
+        
+        -- Obtener tipo de vehículo desde la relación M:N
+        SELECT TOP 1 @id_tipo_vehiculo = vt.id_tipo_vehiculo
+        FROM Vehiculo_TipoVehiculo vt
+        WHERE vt.id_vehiculo = @id_vehiculo;
+        
+        -- Verificar disponibilidad de celda
+        SET @id_celda_asignada = dbo.fn_ValidarDisponibilidadCelda(@id_sede);
+        
+        IF @id_celda_asignada IS NULL
+        BEGIN
+            -- Verificar ocupación actual
+            SET @ocupacion = dbo.fn_CalcularOcupacionSede(@id_sede);
+            SET @error_message = 'No hay celdas disponibles. Ocupación actual: ' + CAST(@ocupacion AS VARCHAR(10)) + '%';
+            RAISERROR(@error_message, 16, 1);
+        END
+        
+        -- Verificar si el cliente tiene convenio activo
+        SELECT TOP 1 @id_convenio = ac.id_convenio,
+               @id_tarjeta = ac.id_tarjeta
+        FROM ASIGNACION_CONVENIO ac
+        WHERE ac.id_vehiculo = @id_vehiculo
+              AND ac.estado = 'Activo'
+              AND GETDATE() BETWEEN ac.fecha_inicio AND ac.fecha_fin;
+        
+        -- Si no tiene convenio, generar nueva tarjeta ocasional
+        IF @id_tarjeta IS NULL
+        BEGIN
+            SET @codigo_tarjeta = 'TO-' + FORMAT(GETDATE(), 'yyyyMMdd') + '-' + 
+                                 RIGHT('0000' + CAST(@id_vehiculo AS VARCHAR), 4);
+            
+            INSERT INTO TARJETA (fecha_hora_emision, codigo_tarjeta, estado_tarjeta)
+            VALUES (GETDATE(), @codigo_tarjeta, 'Activa');
+            
+            SET @id_tarjeta = SCOPE_IDENTITY();
+            
+            -- Crear tarjeta ocasional
+            INSERT INTO TARJETA_OCASIONAL (id_tarjeta, valor, pagada, hora_entrada)
+            VALUES (@id_tarjeta, 0.00, 0, GETDATE());
+            
+            SET @modo_ingreso = 'Ocasional';
+        END
+        ELSE
+        BEGIN
+            SET @modo_ingreso = 'Convenio';
+        END
+        
+        -- Crear registro de parqueo
+        INSERT INTO PARQUEO (id_tarjeta, fecha_hora_ingreso, fecha_hora_salida,
+                           estado_parqueo, modo_ingreso, valor_cobrado, id_celda)
+        VALUES (@id_tarjeta, GETDATE(), NULL, 'activo', @modo_ingreso, 0.00, @id_celda_asignada);
+        
+        SET @id_parqueo = SCOPE_IDENTITY();
+        
+        -- El trigger se encarga de actualizar el estado de la celda y tarjeta
+        
+        COMMIT TRANSACTION;
+        
+        -- Mensaje de éxito
+        PRINT 'Celda asignada exitosamente.';
+        PRINT 'Parqueo #' + CAST(@id_parqueo AS VARCHAR(10));
+        PRINT 'Celda #' + CAST(@id_celda_asignada AS VARCHAR(10));
+        PRINT 'Tarjeta #' + CAST(@id_tarjeta AS VARCHAR(10));
+        PRINT 'Modo de ingreso: ' + @modo_ingreso;
+        
+        IF @id_convenio IS NOT NULL
+            PRINT 'Cliente con convenio activo ID: ' + CAST(@id_convenio AS VARCHAR(10));
+        
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0
+            ROLLBACK TRANSACTION;
+            
+        SET @error_message = ERROR_MESSAGE();
+        PRINT 'ERROR: ' + @error_message;
+        RAISERROR(@error_message, 16, 1);
+    END CATCH
+END
+GO
+
+-- ============================================================================
+-- EJEMPLOS DE USO
+-- ============================================================================
+
+/*
+-- Procedimiento 1: Procesar salida y generar factura
+DECLARE @id_factura INT, @total DECIMAL(10,2);
+EXEC sp_ProcesarSalidaVehiculo 
+    @id_parqueo = 1,
+    @id_usuario = 7,
+    @metodo_pago = 'Tarjeta',
+    @id_factura = @id_factura OUTPUT,
+    @total_factura = @total OUTPUT;
+    
+SELECT @id_factura AS FacturaGenerada, @total AS TotalAPagar;
+
+-- Procedimiento 2: Asignar celda automáticamente
+DECLARE @id_parqueo INT, @id_celda INT;
+EXEC sp_AsignarCeldaAutomatica
+    @id_vehiculo = 1,
+    @id_sede = 1,
+    @id_usuario = 7,
+    @modo_ingreso = 'Ocasional',
+    @id_parqueo = @id_parqueo OUTPUT,
+    @id_celda_asignada = @id_celda OUTPUT;
+    
+SELECT @id_parqueo AS ParqueoCreado, @id_celda AS CeldaAsignada;
+
+-- Consultar estadísticas del día
+SELECT 
+    s.nombre AS sede,
+    eo.*
+FROM estadistica_ocupacion eo
+INNER JOIN SEDE s ON s.id_sede = eo.id_sede
+WHERE fecha = CAST(GETDATE() AS DATE)
+ORDER BY eo.porcentaje_ocupacion DESC;
+
+-- Ver ocupación actual de todas las sedes
+SELECT 
+    s.id_sede, 
+    s.nombre,
+    s.ciudad,
+    s.capacidad_total,
+    dbo.fn_CalcularOcupacionSede(s.id_sede) AS porcentaje_ocupacion
+FROM SEDE s
+ORDER BY porcentaje_ocupacion DESC;
+
+-- Ver tiempo promedio de parqueo última semana
+SELECT 
+    s.nombre AS sede,
+    dbo.fn_TiempoPromedioParqueo(s.id_sede, DATEADD(DAY, -7, GETDATE()), GETDATE()) AS horas_promedio
+FROM SEDE s;
+*/
