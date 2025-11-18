@@ -1,34 +1,41 @@
 /* ============================================================
    VISTA 1: v_ParqueoEditableSimple
-   autor: David Martínez
+   Autor: David Martínez
    propósito: Mostrar los parqueos junto con datos básicos
-   de tarjeta, sede y vehículo, y permitir insertar/actualizar
+   de tarjeta, celda/sede y vehículo, y permitir insertar/actualizar
    parqueos directamente desde la vista.
-   Tablas base: parqueo (editable), Tarjeta, sede, vehiculo
+   Tablas base: PARQUEO (editable), TARJETA, CELDA, SEDE, VEHICULO
    ============================================================ */
 
 CREATE OR ALTER VIEW dbo.v_ParqueoEditableSimple
 AS
 SELECT
-    
     p.id_parqueo,           
     p.id_tarjeta,           -- FK a la tarjeta usada para ingresar
-    p.id_sede,              -- FK a la sede donde ocurre el parqueo
-    p.placa_vehiculo,       -- FK al vehículo que se parqueó
+    p.id_celda,             -- FK a la celda donde se parquea
+    c.id_sede,              -- FK a la sede (desde CELDA)
     p.fecha_hora_ingreso,   -- hora de entrada
     p.fecha_hora_salida,    -- hora de salida
-    p.estado_parqueo,       -- estado actual del parqueo (Abierto/Cerrado)
-
+    p.estado_parqueo,       -- estado actual del parqueo (activo/finalizado)
+    p.modo_ingreso,         -- modo de ingreso (Convenio/Ocasional)
+    p.valor_cobrado,        -- valor cobrado por el parqueo
     
-    s.nombre_sede,          -- nombre de la sede
-    t.estado_tarjeta,       -- estado de la tarjeta usada
-    v.marca,                -- marca del vehículo
-    v.modelo,               -- modelo del vehículo
-    v.color                 -- color del vehículo
-FROM parqueo  AS p
-JOIN Tarjeta  AS t ON t.id_tarjeta = p.id_tarjeta
-JOIN sede     AS s ON s.id_sede    = p.id_sede
-JOIN vehiculo AS v ON v.placa      = p.placa_vehiculo;
+    -- Datos adicionales de otras tablas
+    s.nombre AS nombre_sede,        -- nombre de la sede
+    c.ubicacion AS ubicacion_celda, -- ubicación de la celda
+    c.estado AS estado_celda,       -- estado de la celda
+    t.codigo_tarjeta,               -- código de la tarjeta
+    t.estado_tarjeta,               -- estado de la tarjeta usada
+    v.placa,                        -- placa del vehículo
+    v.marca,                        -- marca del vehículo
+    v.modelo,                       -- modelo del vehículo
+    v.color                         -- color del vehículo
+FROM PARQUEO AS p
+INNER JOIN TARJETA AS t ON t.id_tarjeta = p.id_tarjeta
+INNER JOIN CELDA AS c ON c.id_celda = p.id_celda
+INNER JOIN SEDE AS s ON s.id_sede = c.id_sede
+LEFT JOIN ASIGNACION_CONVENIO AS ac ON ac.id_tarjeta = t.id_tarjeta
+LEFT JOIN VEHICULO AS v ON v.id_vehiculo = ac.id_vehiculo;
 GO
 
 /* ============================================================
@@ -42,20 +49,23 @@ ON dbo.v_ParqueoEditableSimple
 INSTEAD OF INSERT
 AS
 BEGIN
-    SET NOCOUNT ON;  -- evita mensajes extra de "x filas afectadas"
+    SET NOCOUNT ON; -- evita mensajes extra de "x filas afectadas"
 
-    INSERT INTO parqueo
-        (id_tarjeta, fecha_hora_ingreso, fecha_hora_salida, id_sede, placa_vehiculo, estado_parqueo)
+    INSERT INTO PARQUEO
+        (id_tarjeta, id_celda, fecha_hora_ingreso, fecha_hora_salida, 
+         estado_parqueo, modo_ingreso, valor_cobrado)
     SELECT
-        i.id_tarjeta,                            -- usa la tarjeta que viene en el insert
+        i.id_tarjeta, -- usa la tarjeta que viene en el insert
+        i.id_celda,
         ISNULL(i.fecha_hora_ingreso, GETDATE()), -- si no se envía una fecha, usa la actual
-        NULL,                                    -- la salida se deja nula al abrir el parqueo
-        i.id_sede,                               -- sede del parqueo
-        i.placa_vehiculo,                        -- vehículo que ingresa
-        'Abierto'                                -- nuevo parqueo siempre inicia en estado Abierto
-    FROM inserted AS i;                          -- 'inserted' es la tabla temporal con los datos nuevos
+        NULL, -- la salida se deja nula al abrir el parqueo
+        'activo', -- nuevo parqueo siempre inicia en estado Activo
+        ISNULL(i.modo_ingreso, 'Ocasional'),
+        ISNULL(i.valor_cobrado, 0.00)
+    FROM inserted AS i; -- 'inserted' es la tabla temporal con los datos nuevos
 END;
 GO
+
 /* ============================================================
    TRIGGER: tr_v_ParqueoEditableSimple_UPD
    propósito: Cuando el usuario hace un UPDATE sobre la vista,
@@ -71,7 +81,7 @@ BEGIN
 
     UPDATE p
     SET
-        -- Si el usuario mandó un nuevo id_tarjeta, se usa ese;
+		-- Si el usuario mandó un nuevo id_tarjeta, se usa ese;
         -- si no, se mantiene el valor anterior.
         p.id_tarjeta =
             CASE 
@@ -79,82 +89,91 @@ BEGIN
                 ELSE p.id_tarjeta
             END,
 
-        -- Misma lógica para id_sede
-        p.id_sede =
+        p.id_celda =
             CASE 
-                WHEN i.id_sede IS NOT NULL THEN i.id_sede
-                ELSE p.id_sede
+                WHEN i.id_celda IS NOT NULL THEN i.id_celda
+                ELSE p.id_celda
             END,
-
-        -- Y también para la placa del vehículo
-        p.placa_vehiculo =
-            CASE 
-                WHEN i.placa_vehiculo IS NOT NULL THEN i.placa_vehiculo
-                ELSE p.placa_vehiculo
-            END,
-
-        -- Si se envía una nueva fecha de ingreso, la actualiza;
+		-- Si se envía una nueva fecha de ingreso, la actualiza;
         -- si no, conserva la anterior.
         p.fecha_hora_ingreso =
             CASE 
                 WHEN i.fecha_hora_ingreso IS NOT NULL THEN i.fecha_hora_ingreso
                 ELSE p.fecha_hora_ingreso
             END,
-
-        -- Igual con la fecha de salida.
+			-- Igual con la fecha de salida.
         p.fecha_hora_salida =
             CASE 
                 WHEN i.fecha_hora_salida IS NOT NULL THEN i.fecha_hora_salida
                 ELSE p.fecha_hora_salida
             END,
 
-        -- Aquí se aplica la lógica del estado:
-        -- Si hay una fecha de salida (no es NULL) → estado = 'Cerrado'
-        -- Si NO hay fecha de salida → estado = 'Abierto'
+        p.modo_ingreso =
+            CASE 
+                WHEN i.modo_ingreso IS NOT NULL THEN i.modo_ingreso
+                ELSE p.modo_ingreso
+            END,
+
+        p.valor_cobrado =
+            CASE 
+                WHEN i.valor_cobrado IS NOT NULL THEN i.valor_cobrado
+                ELSE p.valor_cobrado
+            END,
+			-- Aquí se aplica la lógica del estado:
+        -- Si hay una fecha de salida (no es NULL) → estado = 'Inactivo'
+        -- Si NO hay fecha de salida → estado = 'Activo'
         p.estado_parqueo =
             CASE
                 WHEN (CASE 
                         WHEN i.fecha_hora_salida IS NOT NULL THEN i.fecha_hora_salida
                         ELSE p.fecha_hora_salida
                       END) IS NOT NULL
-                THEN 'Cerrado'
-                ELSE 'Abierto'
+                THEN 'finalizado'
+                ELSE 'activo'
             END
-    FROM parqueo p
-    JOIN inserted i ON i.id_parqueo = p.id_parqueo;  -- se actualizan solo los registros que se están modificando
+    FROM PARQUEO p
+    INNER JOIN inserted i ON i.id_parqueo = p.id_parqueo; -- se actualizan solo los registros que se están modificando
 END;
 GO
 
 /* ============================================================
    VISTA 2: v_FacturaEditableSimple
-   autor: David Martínez
-   propósito: Permitir crear o modificar facturas de lavados
-   y mostrar datos de cliente, sede y lavado asociados.
-   Tablas base: factura (editable), cliente, sede, liquidacion_lavado, lavado
+   Autor: David Martínez
+   propósito: Permitir crear o modificar facturas
+   y mostrar datos de cliente, usuario y parqueo/servicio asociados.
+   Tablas base: FACTURA (editable), CLIENTE, USUARIO, PARQUEO, SERVICIO_LAVADO
    ============================================================ */
 
 CREATE OR ALTER VIEW dbo.v_FacturaEditableSimple
 AS
 SELECT
     -- Campos EDITABLES (de la tabla FACTURA)
-    f.id_factura,           -- PK de la factura
-    f.fecha_emision,        -- fecha de emisión de la factura
-    f.documento_cliente,    -- cliente asociado
-    f.id_sede,              -- sede donde se genera la factura
-    f.total_pagar,          -- total a cobrar
-    f.id_liquidacion_lavado,-- FK a la liquidación del lavado
+    f.id_factura,                -- PK de la factura
+    f.fecha_hora_emision,        -- fecha de emisión de la factura
+    f.id_cliente,                -- cliente asociado
+    f.id_usuario,                -- usuario que genera la factura
+    f.total_bruto,               -- total bruto
+    f.total_neto,                -- total a cobrar
+    f.numero_factura,            -- número único de factura
+    f.metodo_pago,               -- método de pago usado
+    f.id_parqueo,                -- FK al parqueo (puede ser NULL)
+    f.id_asignacion_convenio,    -- FK a asignación de convenio (puede ser NULL)
 
     -- Campos informativos (de otras tablas)
     c.nombre       AS nombre_cliente,
-    s.nombre_sede,
-    lv.id_lavado,
-    lv.precio_lavado
-FROM factura f
-JOIN cliente c             ON c.documento              = f.documento_cliente
-JOIN sede s                ON s.id_sede                = f.id_sede
-JOIN liquidacion_lavado lq ON lq.id_liquidacion_lavado = f.id_liquidacion_lavado
-JOIN lavado lv             ON lv.id_lavado             = lq.id_lavado;
+    c.apellido     AS apellido_cliente,
+    c.documento    AS documento_cliente,
+    u.nombre       AS nombre_usuario,
+    u.apellidos    AS apellido_usuario,
+    p.fecha_hora_ingreso,
+    p.fecha_hora_salida,
+    p.valor_cobrado AS valor_parqueo
+FROM FACTURA f
+INNER JOIN CLIENTE c ON c.id_cliente = f.id_cliente
+INNER JOIN USUARIO u ON u.id_usuario = f.id_usuario
+LEFT JOIN PARQUEO p ON p.id_parqueo = f.id_parqueo;
 GO
+
 /* ============================================================
    TRIGGER: tr_v_FacturaEditableSimple_INS
    propósito: Cuando se hace INSERT sobre la vista,
@@ -166,32 +185,53 @@ ON dbo.v_FacturaEditableSimple
 INSTEAD OF INSERT
 AS
 BEGIN
-    SET NOCOUNT ON;
+    SET NOCOUNT ON;  -- evita mensajes extra de "x filas afectadas"
 
-    INSERT INTO factura
-        (fecha_emision, documento_cliente, id_sede, total_pagar, id_liquidacion_lavado)
+    INSERT INTO FACTURA
+        (fecha_hora_emision, id_cliente, id_usuario, total_bruto, total_neto, 
+         numero_factura, metodo_pago, id_parqueo, id_asignacion_convenio)
     SELECT
         -- Si el usuario manda una fecha, se usa;
         -- si no, se usa la fecha actual del sistema.
         CASE 
-            WHEN i.fecha_emision IS NOT NULL THEN i.fecha_emision
-            ELSE CAST(GETDATE() AS DATE)
+            WHEN i.fecha_hora_emision IS NOT NULL THEN i.fecha_hora_emision
+            ELSE GETDATE()
         END,
 
-        -- Cliente, sede y liquidación se insertan directamente desde lo que venga en la vista.
-        i.documento_cliente,
-        i.id_sede,
+        -- Cliente y usuario se insertan directamente desde lo que venga en la vista.
+        i.id_cliente,
+        i.id_usuario,
 
-        -- Si el usuario no envía el total, se guarda 0 para evitar NULL.
+        -- Si el usuario no envía el total bruto, se guarda 0 para evitar NULL.
         CASE 
-            WHEN i.total_pagar IS NOT NULL THEN i.total_pagar
+            WHEN i.total_bruto IS NOT NULL THEN i.total_bruto
             ELSE 0
         END,
 
-        i.id_liquidacion_lavado
+        -- Si el usuario no envía el total neto, se guarda 0 para evitar NULL.
+        CASE 
+            WHEN i.total_neto IS NOT NULL THEN i.total_neto
+            ELSE 0
+        END,
+
+        -- Número de factura (debe ser único)
+        i.numero_factura,
+
+        -- Método de pago
+        CASE 
+            WHEN i.metodo_pago IS NOT NULL THEN i.metodo_pago
+            ELSE 'Efectivo'
+        END,
+
+        -- Parqueo (puede ser NULL si es solo lavado)
+        i.id_parqueo,
+
+        -- Asignación de convenio (puede ser NULL)
+        i.id_asignacion_convenio
     FROM inserted AS i;
 END;
 GO
+
 /* ============================================================
    TRIGGER: tr_v_FacturaEditableSimple_UPD
    propósito: Permite actualizar campos de factura desde la vista.
@@ -208,41 +248,63 @@ BEGIN
     SET
         -- Si se envía una nueva fecha de emisión, la actualiza;
         -- si no, conserva la anterior.
-        f.fecha_emision =
+        f.fecha_hora_emision =
             CASE 
-                WHEN i.fecha_emision IS NOT NULL THEN i.fecha_emision
-                ELSE f.fecha_emision
+                WHEN i.fecha_hora_emision IS NOT NULL THEN i.fecha_hora_emision
+                ELSE f.fecha_hora_emision
             END,
 
-        -- Si se envía un nuevo total, se actualiza;
+        -- Si se envía un nuevo total bruto, se actualiza;
         -- de lo contrario, permanece igual.
-        f.total_pagar =
+        f.total_bruto =
             CASE 
-                WHEN i.total_pagar IS NOT NULL THEN i.total_pagar
-                ELSE f.total_pagar
+                WHEN i.total_bruto IS NOT NULL THEN i.total_bruto
+                ELSE f.total_bruto
             END,
 
-        -- Si se cambia la sede, se actualiza.
-        f.id_sede =
+        -- Si se envía un nuevo total neto, se actualiza;
+        -- de lo contrario, permanece igual.
+        f.total_neto =
             CASE 
-                WHEN i.id_sede IS NOT NULL THEN i.id_sede
-                ELSE f.id_sede
+                WHEN i.total_neto IS NOT NULL THEN i.total_neto
+                ELSE f.total_neto
             END,
 
-        -- Actualiza el cliente si se envía un nuevo documento.
-        f.documento_cliente =
+        -- Si se cambia el método de pago, se actualiza.
+        f.metodo_pago =
             CASE 
-                WHEN i.documento_cliente IS NOT NULL THEN i.documento_cliente
-                ELSE f.documento_cliente
+                WHEN i.metodo_pago IS NOT NULL THEN i.metodo_pago
+                ELSE f.metodo_pago
             END,
 
-        -- Si se envía un nuevo id_liquidacion_lavado, se usa ese.
-        f.id_liquidacion_lavado =
+        -- Actualiza el cliente si se envía un nuevo id_cliente.
+        f.id_cliente =
             CASE 
-                WHEN i.id_liquidacion_lavado IS NOT NULL THEN i.id_liquidacion_lavado
-                ELSE f.id_liquidacion_lavado
+                WHEN i.id_cliente IS NOT NULL THEN i.id_cliente
+                ELSE f.id_cliente
+            END,
+
+        -- Si se envía un nuevo id_usuario, se usa ese.
+        f.id_usuario =
+            CASE 
+                WHEN i.id_usuario IS NOT NULL THEN i.id_usuario
+                ELSE f.id_usuario
+            END,
+
+        -- Si se envía un nuevo id_parqueo, se usa ese.
+        f.id_parqueo =
+            CASE 
+                WHEN i.id_parqueo IS NOT NULL THEN i.id_parqueo
+                ELSE f.id_parqueo
+            END,
+
+        -- Si se envía un nuevo id_asignacion_convenio, se usa ese.
+        f.id_asignacion_convenio =
+            CASE 
+                WHEN i.id_asignacion_convenio IS NOT NULL THEN i.id_asignacion_convenio
+                ELSE f.id_asignacion_convenio
             END
-    FROM factura f
-    JOIN inserted i ON i.id_factura = f.id_factura;
+    FROM FACTURA f
+    INNER JOIN inserted i ON i.id_factura = f.id_factura;  -- se actualizan solo los registros que se están modificando
 END;
 GO
