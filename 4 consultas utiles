@@ -1,9 +1,12 @@
-/*Hacer 4 consultas útiles para el usuario, que implementen los 4 tipos de Joins que hay.
-Cada consulta debe ir con su respectivo enunciado, y debe generar algún resultado.*/
-/* 1 creacion de consulta con inner join 
-autor David 
-enunciado : Mostrar los parqueos realizados, junto con la información del vehículo y la sede donde se estacionó.
+-- =======================================================================================================================
+/* Hacer 4 consultas útiles para el usuario, que implementen los 4 tipos de JOINS que hay.
+Cada consulta debe ir con su respectivo Enunciado, y debe generar algún resultado.*/
+-- =======================================================================================================================
+/* 1 Creacion de consulta con INNER JOIN
+Autor: David Martinez
+Enunciado : Mostrar los parqueos realizados, junto con la información del vehículo y la sede donde se estacionó.
 El objetivo es que el usuario pueda ver los movimientos de parqueo con su contexto completo.*/
+-- =======================================================================================================================
 SELECT 
     p.id_parqueo,
     p.fecha_hora_ingreso,
@@ -11,55 +14,74 @@ SELECT
     v.placa,
     v.marca,
     v.modelo,
-    s.nombre_sede,
+    s.nombre AS nombre_sede,
     p.estado_parqueo
-FROM parqueo AS p
-INNER JOIN vehiculo AS v ON p.placa_vehiculo = v.placa
-INNER JOIN sede AS s ON p.id_sede = s.id_sede;
-/* 2  creacion de consulta con left   join 
-autor David 
-enunciado : Mostrar todos los clientes registrados, junto con los vehículos que tienen.  */
+FROM PARQUEO p
+INNER JOIN VEHICULO v ON p.id_vehiculo = v.id_vehiculo
+INNER JOIN CELDA c ON p.id_celda = c.id_celda
+INNER JOIN SEDE s ON c.id_sede = s.id_sede;
+-- =======================================================================================================================
+/* 2 Creacion de consulta con LEFT JOIN
+Autor: David Martinez
+Enunciado : Mostrar todos los clientes registrados, junto con los vehículos que tienen.  */
+-- =======================================================================================================================
 SELECT 
+    c.id_cliente,
     c.documento,
     c.nombre AS nombre_cliente,
     c.telefono,
+    v.id_vehiculo,
     v.placa,
     v.marca,
     v.modelo,
     v.color
-FROM cliente AS c
-LEFT JOIN vehiculo AS v
-    ON c.documento = v.documento_cliente;
-    /* 3   creacion de consulta con rigth    join 
-autor David 
-enunciado : Mostrar todos los lavados realizados, junto con su factura asociada (si existe).
+FROM CLIENTE AS c
+LEFT JOIN VEHICULO AS v
+    ON v.id_cliente = c.id_cliente;
+-- =======================================================================================================================
+ /* 3 Creacion de consulta con RIGHT JOIN 
+Autor: David Martinez
+Enunciado : Mostrar todos los lavados realizados, junto con su factura asociada (si existe).
 Si hay algún lavado que todavía no ha sido facturado, debe aparecer igualmente. */
-SELECT 
-    f.id_factura,
-    f.fecha_emision,
-    f.total_pagar,
-    l.id_lavado,
-    l.placa,
-    l.precio_lavado,
-    l.estado_lavado
-FROM factura AS f
-RIGHT JOIN lavado AS l
-    ON f.id_liquidacion_lavado = l.id_lavado;
-      /* 4   creacion de consulta con FULL OUTER JOIN
-autor David 
-enunciado : Listar todos los convenios y todos los clientes, para ver:
-
-clientes sin convenio,
-
-convenios sin clientes,
-
-y los que sí están asociados. */
+-- =======================================================================================================================
 SELECT
-    c.documento       AS documento_cliente,
-    c.nombre          AS nombre_cliente,
+    f.id_factura,
+    sl.id_servicio_lavado,
+    sl.fecha_hora_inicio,
+    sl.fecha_hora_fin,
+    sl.valor,
+    sl.estado,
+    sl.id_tipo_lavado,
+    sl.id_cliente,
+    sl.id_vehiculo,
+    sl.id_celda
+FROM factura AS f
+RIGHT JOIN servicio_lavado AS sl
+    ON f.id_factura = sl.id_factura;
+-- =======================================================================================================================
+/* 4 Creacion de consulta con FULL OUTER JOIN
+Autor: David Martinez
+Listar todos los convenios y todos los clientes, para ver:
+   - clientes sin convenio,
+   - convenios sin clientes,
+   - y los que sí están asociados. */
+-- =======================================================================================================================
+
+SELECT
+    c.documento           AS documento_cliente,
+    c.nombre              AS nombre_cliente,
+    c.apellido            AS apellido_cliente,
     con.id_convenio,
-    con.nombre_convenio
-FROM cliente AS c
-FULL OUTER JOIN convenio AS con
-    ON c.id_convenio = con.id_convenio
+    con.descripcion       AS descripcion_convenio,
+    con.precio_base,
+    v.placa               AS placa_vehiculo,
+    ac.estado             AS estado_asignacion
+FROM CLIENTE AS c
+LEFT JOIN VEHICULO AS v 
+    ON c.id_cliente = v.id_cliente
+LEFT JOIN ASIGNACION_CONVENIO AS ac 
+    ON v.id_vehiculo = ac.id_vehiculo
+FULL OUTER JOIN CONVENIO AS con
+    ON ac.id_convenio = con.id_convenio
 ORDER BY con.id_convenio, c.documento;
+GO
